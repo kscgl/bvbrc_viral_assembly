@@ -1,0 +1,3 @@
+sra_id,reference,fastq1,fastq2,fastq
+SRR27422853,NC_001474,,,
+SRR28752452,test_files/Influenza_Genome.fasta,,,

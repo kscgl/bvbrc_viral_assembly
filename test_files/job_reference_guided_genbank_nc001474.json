@@ -1,0 +1,9 @@
+{
+  "strategy": "reference_guided",
+  "reference_type": "genbank",
+  "reference_assembly": "NC_001474.2",
+  "genbank_accession": "NC_001474.2",
+  "output_file": "SRR27422853",
+  "srr_id": "SRR27422853"
+}
+

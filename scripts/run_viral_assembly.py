@@ -17,11 +17,14 @@ from reference_guided_assembly import run_reference_guided
 #
 def first_existing_path(*paths):
   for p in paths:
-    if os.path.exists(p):
+    if p and os.path.exists(p):
       return p
   return paths[-1]  # fallback
 
 top = os.getenv("KB_TOP")
+# Allow local/dev runs without KB_TOP by falling back to repo root.
+if not top:
+  top = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 ASSEMBLY_REPORT_TEMPLATE = first_existing_path(
     os.path.join(top, "lib", "viral_assembly_report_template.html"),
