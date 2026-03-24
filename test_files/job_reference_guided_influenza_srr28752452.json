@@ -3,7 +3,7 @@
   "reference_type": "fasta",
   "reference_fasta_file": "test_files/Influenza_Genome.fasta",
   "output_file": "SRR28752452",
-  "srr_id": "SRR28752452",
+  "sra_id": "SRR28752452",
   "segment_names": [
     "A_HA",
     "A_NA",

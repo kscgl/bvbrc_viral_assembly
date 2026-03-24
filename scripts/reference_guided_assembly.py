@@ -302,26 +302,25 @@ def run_reference_guided(
     read_single: Optional[str] = None,
 ) -> Dict:
     """
-    Entrypoint that accepts raw job JSON (requires reference_input for genbank
+    Entrypoint that accepts raw job JSON (requires reference_genbank_accession for genbank
     or reference_fasta_file for fasta — see run_viral_assembly._resolve_reference_inputs).
-    Stages SRA reads via sra_staging when srr_id is set and no reads were passed.
+    Stages SRA reads via run_viral_assembly.ensure_sra_fastqs when sra_id is set and no reads were passed.
     Prefer run_reference_guided_resolved from the run script for new code.
     """
     _scripts_dir = os.path.dirname(os.path.abspath(__file__))
     if _scripts_dir not in sys.path:
         sys.path.insert(0, _scripts_dir)
 
-    if job_data.get("srr_id") and not (read1 or read2 or read_single):
-        from sra_staging import ensure_sra_fastqs
-
-        read1, read2, read_single = ensure_sra_fastqs(
-            output_dir, str(job_data["srr_id"]), job_data
-        )
-
     import run_viral_assembly as rva
 
+    sra_run = job_data.get("sra_id") or job_data.get("srr_id")
+    if sra_run and not (read1 or read2 or read_single):
+        read1, read2, read_single = rva.ensure_sra_fastqs(
+            output_dir, str(sra_run), job_data
+        )
+
     ref_type, ref_tokens = rva._resolve_reference_inputs(job_data)
-    sample_name = str(job_data.get("output_file") or job_data.get("srr_id") or "sample")
+    sample_name = str(job_data.get("output_file") or job_data.get("sra_id") or job_data.get("srr_id") or "sample")
     return run_reference_guided_resolved(
         output_dir=output_dir,
         sample_name=sample_name,

@@ -24,7 +24,7 @@ For reference-guided jobs, the script:
 - **Obtains input reads** from exactly one source (staging uses `p3-cp` for workspace paths in production; local paths are supported for dev):
   - **Paired-end reads**: `paired_end_lib.read1` + `paired_end_lib.read2`
   - **Single-end reads**: `single_end_lib.read`
-  - **SRA**: `srr_id` — `prefetch` / `fasterq-dump` run **in this script** (`scripts/sra_staging.py`) by default; assembly receives local FASTQs only.
+  - **SRA**: `sra_id` (run accession, e.g. `SRR28752452`) — **`p3-sra`** runs in **`scripts/run_viral_assembly.py`** by default; assembly receives local FASTQs only.
 - **Stages reference FASTA** (`reference_type: fasta`) into `reference_inputs/` via the same fetch helper as reads, then **resolves GenBank** accessions or local FASTAs and runs the science pipeline in `scripts/reference_guided_assembly.py`:
   - `fastp` trimming
   - `bwa mem` alignment
@@ -46,7 +46,7 @@ For reference-guided jobs, the script:
 Required tools in your env:
 
 - `python3`, `fastp`, `bwa`, `samtools`, `bcftools`, `quast.py`
-- for SRA jobs: `prefetch`, `fasterq-dump`
+- for SRA jobs in BV-BRC: `p3-sra` on `PATH`
 - Python package: `biopython`
 
 Recommended local invocation:
@@ -65,7 +65,7 @@ Example:
 
 ## UI → service JSON contract (reference-guided)
 
-The form definition in `app_specs/ViralAssembly.json` uses the same reference keys as the table below. Older names (`fasta_file`, `genbank_accession`, `reference_assembly`) are **not** read by the runner.
+The form definition in `app_specs/ViralAssembly.json` matches the table below. Older reference keys (`fasta_file`, `genbank_accession`, `reference_assembly`, `reference_input`) are **not** read by the runner. For SRA-only reads, use **`sra_id`**; legacy **`srr_id`** is still accepted.
 
 ### Required inputs (every reference-guided job)
 
@@ -73,11 +73,11 @@ The form definition in `app_specs/ViralAssembly.json` uses the same reference ke
 |-------|--------|
 | `strategy` | `"reference_guided"` |
 | `reference_type` | `"genbank"` or `"fasta"` |
-| Reference sequence | If `reference_type` is **`genbank`**: set **`reference_input`** only (one accession, `"ACC1;ACC2"` for multiple, or a JSON list). If **`fasta`**: set **`reference_fasta_file`** only (one workspace/local path, `"path1;path2"` or a list for multiple files). |
-| Reads (pick **one**) | **`paired_end_lib`**: `read1` and `read2`, **or** **`single_end_lib`**: `read`, **or** **`srr_id`** (SRA run accession). |
-| Output basename | **`output_file`** (recommended). If missing, some jobs fall back to `srr_id`. |
+| Reference sequence | If `reference_type` is **`genbank`**: set **`reference_genbank_accession`** only (one accession, `"ACC1;ACC2"` for multiple, or a JSON list). If **`fasta`**: set **`reference_fasta_file`** only (one workspace/local path, `"path1;path2"` or a list for multiple files). |
+| Reads (pick **one**) | **`paired_end_lib`**: `read1` and `read2`, **or** **`single_end_lib`**: `read`, **or** **`sra_id`** (run accession such as `SRR28752452`). |
+| Output basename | **`output_file`** (recommended). If missing, some jobs fall back to `sra_id`. |
 
-**GenBank-only requirement:** set **`email`** (or environment variable `ENTREZ_EMAIL`) so NCBI sequences can be fetched for `reference_input`.
+**GenBank-only requirement:** set **`email`** (or environment variable `ENTREZ_EMAIL`) so NCBI sequences can be fetched for `reference_genbank_accession`.
 
 ### Optional inputs (tuning and segmented references)
 
@@ -88,12 +88,12 @@ The form definition in `app_specs/ViralAssembly.json` uses the same reference ke
 | `align_threads`, `fastp_threads` | Thread counts for `bwa` and `fastp`. |
 | `region` | Limit `bcftools mpileup` to one contig/region. |
 | `depth_cutoff` | Depth below which consensus is masked with `N` (default `10`; `0` disables). |
-| `download_sra_from_prefetch`, `download_fastqs_from_sra` | Override SRA staging (default **`true`** when `srr_id` is set). |
+| `download_sra_from_prefetch`, `download_fastqs_from_sra` | If either is explicitly **`false`**, skip **`p3-sra`** and require FASTQs already under the output directory (defaults: both **`true`** when `sra_id` is set). |
 
 **Segmented / multi-reference behavior (concepts):**
 
 - **One multi-record FASTA** (`reference_fasta_file` → one file, many `>` records): optional `segment_names` + `per_segment_consensus` control header labels and per-segment outputs.
-- **Several separate references**: put multiple accessions in `reference_input` or multiple paths in `reference_fasta_file` (list or semicolon-separated); they are concatenated into one alignment reference.
+- **Several separate references**: put multiple accessions in `reference_genbank_accession` or multiple paths in `reference_fasta_file` (list or semicolon-separated); they are concatenated into one alignment reference.
 
 ### JSON examples
 
@@ -118,9 +118,9 @@ The form definition in `app_specs/ViralAssembly.json` uses the same reference ke
 {
   "strategy": "reference_guided",
   "reference_type": "genbank",
-  "reference_input": "NC_001474.2",
+  "reference_genbank_accession": "NC_001474.2",
   "output_file": "SRR27422853",
-  "srr_id": "SRR27422853",
+  "sra_id": "SRR27422853",
   "email": "you@org.org"
 }
 ```
@@ -145,7 +145,7 @@ The form definition in `app_specs/ViralAssembly.json` uses the same reference ke
 {
   "strategy": "reference_guided",
   "reference_type": "genbank",
-  "reference_input": "NC_045512.2;MN908947.3",
+  "reference_genbank_accession": "NC_045512.2;MN908947.3",
   "segment_names": "SARS2_ref1;SARS2_ref2",
   "output_file": "sampleX",
   "single_end_lib": { "read": "ws:/path/reads.fastq" },
@@ -177,7 +177,7 @@ Top-level (typical):
 
 SRA note:
 
-- For `srr_id` jobs, `.sra` and FASTQs are staged under `<out_dir>/` (and `<out_dir>/<SRR>/` layouts as produced by `prefetch` / `fasterq-dump`).
+- For `sra_id` jobs, **`p3-sra`** writes `{SRR}_1.fastq` / `{SRR}_2.fastq` (or `{SRR}.fastq`) under the job output directory (same naming as before; the **value** is still an SRR-style run accession).
 
 ## Local parity testing and comparison (old vs new)
 

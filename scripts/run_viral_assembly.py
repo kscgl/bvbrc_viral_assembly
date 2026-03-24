@@ -11,7 +11,6 @@ import traceback
 from time import strftime, localtime
 
 from reference_guided_assembly import run_reference_guided_resolved
-from sra_staging import ensure_sra_fastqs
 
 #
 # Determine paths
@@ -41,8 +40,88 @@ FLU_AD_INIT = first_existing_path(
 
 DEFAULT_STRATEGY = "IRMA"
 DEFAULT_IRMA_MODULE = "FLU"
-MAX_RETRIES = 5
-RETRY_DELAY = 10
+SRA_FETCH_RETRIES = 5
+SRA_RETRY_DELAY_SEC = 10
+
+
+def fetch_fastqs_from_sra(sra_id, temp_dir="/tmp", output_dir="sra_fastqs"):
+  """Download FASTQs with ``p3-sra``. Returns (read1_or_single, read2); single-end is (path, None)."""
+  os.makedirs(output_dir, exist_ok=True)
+  cmd = ["p3-sra", "--id", sra_id, "--out", output_dir]
+
+  for attempt in range(1, SRA_FETCH_RETRIES + 1):
+    print(f"Attempt {attempt}: Fetching FASTQs for SRA ID {sra_id} using p3-sra")
+    try:
+      subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+      print(f"Error fetching FASTQs for SRA ID {sra_id}: {e}")
+      return None, None
+
+    r1 = os.path.join(output_dir, f"{sra_id}_1.fastq")
+    r2 = os.path.join(output_dir, f"{sra_id}_2.fastq")
+    r_single = os.path.join(output_dir, f"{sra_id}.fastq")
+
+    if os.path.exists(r1) or os.path.exists(r2):
+      return (
+        r1 if os.path.exists(r1) else None,
+        r2 if os.path.exists(r2) else None,
+      )
+
+    if os.path.exists(r_single):
+      return r_single, None
+
+    print(f"FASTQ files not found after attempt {attempt}. Retrying in {SRA_RETRY_DELAY_SEC} seconds...")
+    time.sleep(SRA_RETRY_DELAY_SEC)
+
+  print(f"No valid FASTQ files found for SRA ID {sra_id}.")
+  return None, None
+
+
+def ensure_sra_fastqs(output_dir, sra_run_accession, job_data=None):
+  """
+  Ensure FASTQs for *sra_run_accession* (e.g. SRRnnn) exist under *output_dir* (reuse on disk, else ``p3-sra``).
+
+  job_data optional keys ``download_sra_from_prefetch`` / ``download_fastqs_from_sra`` (default True):
+  if either is False, download is skipped and files must already exist.
+
+  Returns (read1, read2, read_single).
+  """
+  if job_data is None:
+    job_data = {}
+  os.makedirs(output_dir, exist_ok=True)
+  sid = str(sra_run_accession)
+
+  dl_p = job_data.get("download_sra_from_prefetch")
+  dl_p = True if dl_p is None else bool(dl_p)
+  dl_f = job_data.get("download_fastqs_from_sra")
+  dl_f = True if dl_f is None else bool(dl_f)
+  allow_fetch = dl_p and dl_f
+
+  fq1 = os.path.join(output_dir, f"{sid}_1.fastq")
+  fq2 = os.path.join(output_dir, f"{sid}_2.fastq")
+  fqs = os.path.join(output_dir, f"{sid}.fastq")
+
+  have_pe = os.path.exists(fq1) and os.path.exists(fq2)
+  have_se = os.path.exists(fqs)
+  have_fastqs = have_pe or have_se
+
+  if not have_fastqs:
+    if not allow_fetch:
+      raise RuntimeError(
+        f"No FASTQs for {sid} under {output_dir} and SRA download is disabled "
+        "(download_sra_from_prefetch / download_fastqs_from_sra). "
+        "Provide reads or enable download."
+      )
+    r1, r2 = fetch_fastqs_from_sra(sid, output_dir=output_dir)
+    if r2:
+      return r1, r2, None
+    if r1:
+      return None, None, r1
+    raise RuntimeError(f"p3-sra did not produce FASTQs for {sid} under {output_dir}.")
+
+  if have_pe:
+    return fq1, fq2, None
+  return None, None, fqs
 
 
 def _parse_string_list(v):
@@ -57,11 +136,16 @@ def _parse_string_list(v):
   return None
 
 
+def _job_sra_run_accession(job_data):
+  """SRA run accession (e.g. SRR123). Canonical JSON key ``sra_id``; legacy ``srr_id`` accepted."""
+  return job_data.get("sra_id") or job_data.get("srr_id") or None
+
+
 def _resolve_reference_inputs(job_data):
   """
   Read reference tokens from job JSON (runner-only). No legacy key aliases.
 
-  - reference_type genbank: require reference_input (string, list, or ';'-separated accessions).
+  - reference_type genbank: require reference_genbank_accession (string, list, or ';'-separated accessions).
   - reference_type fasta: require reference_fasta_file (path string, list, or ';'-separated paths).
   """
   reference_type = str(job_data.get("reference_type") or "").lower()
@@ -69,10 +153,11 @@ def _resolve_reference_inputs(job_data):
     raise ValueError("reference_type must be 'genbank' or 'fasta' for reference-guided strategy.")
 
   if reference_type == "genbank":
-    tokens = _parse_string_list(job_data.get("reference_input"))
+    tokens = _parse_string_list(job_data.get("reference_genbank_accession"))
     if not tokens:
       raise ValueError(
-        "reference_input is required for GenBank references (e.g. 'NC_045512.2' or 'NC_045512.2;MN908947.3')."
+        "reference_genbank_accession is required for GenBank references "
+        "(e.g. 'NC_045512.2' or 'NC_045512.2;MN908947.3')."
       )
     return reference_type, tokens
 
@@ -115,38 +200,6 @@ def fetch_file_from_ws(ws_path, local_path):
     print(f"Error fetching file from {ws_path}: {e}")
     return False
   return True
-
-def fetch_fastqs_from_sra(sra_id, temp_dir="/tmp", output_dir="sra_fastqs"):
-  os.makedirs(output_dir, exist_ok=True)
-  cmd = ["p3-sra", "--id", sra_id, "--out", output_dir]
-
-  for attempt in range(1, MAX_RETRIES + 1):
-    print(f"Attempt {attempt}: Fetching FASTQs for SRA ID {sra_id} using p3-sra")
-    try:
-      subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-      print(f"Error fetching FASTQs for SRA ID {sra_id}: {e}")
-      return None, None
-
-    # Check if files exist after the command runs
-    r1 = os.path.join(output_dir, f"{sra_id}_1.fastq")
-    r2 = os.path.join(output_dir, f"{sra_id}_2.fastq")
-    r_single = os.path.join(output_dir, f"{sra_id}.fastq")
-
-    # Paired-end case
-    if os.path.exists(r1) or os.path.exists(r2):
-      return (r1 if os.path.exists(r1) else None,
-              r2 if os.path.exists(r2) else None)
-
-    # Single-end case
-    if os.path.exists(r_single):
-      return (r_single, None)
-
-    print(f"FASTQ files not found after attempt {attempt}. Retrying in {RETRY_DELAY} seconds...")
-    time.sleep(RETRY_DELAY)
-
-  print(f"No valid FASTQ files found for SRA ID {sra_id}.")
-  return None, None
 
 def concatenate_fasta_files(fasta_dir, output_fasta):
     """
@@ -332,7 +385,7 @@ if __name__ == "__main__" :
 
   paired_end_lib = job_data.get("paired_end_lib", {})
   single_end_lib = job_data.get("single_end_lib", {})
-  srr_id = job_data.get("srr_id", None)
+  sra_id = _job_sra_run_accession(job_data)
   strategy = job_data.get("strategy", DEFAULT_STRATEGY)
   strategy_lower = str(strategy).lower()
   if strategy == "auto":
@@ -340,20 +393,20 @@ if __name__ == "__main__" :
   module = job_data.get("module", DEFAULT_IRMA_MODULE)
 
   # Input validation:
-  # - IRMA: exactly one of (paired_end_lib, single_end_lib, srr_id)
-  # - reference_guided: allow srr_id together with paired_end_lib/single_end_lib
-  #   so the backend can stage <SRR>.sra while still using provided FASTQs.
+  # - IRMA: exactly one of (paired_end_lib, single_end_lib, sra_id)
+  # - reference_guided: allow sra_id together with paired_end_lib/single_end_lib
+  #   so the backend can stage reads while still using provided FASTQs.
   if strategy_lower == "reference_guided":
     if paired_end_lib and single_end_lib:
       print("Error: Please provide only one of paired_end_lib or single_end_lib (not both).")
       sys.exit(-1)
-    if not (paired_end_lib or single_end_lib or srr_id):
-      print("Error: Please provide paired_end_lib, single_end_lib, or srr_id.")
+    if not (paired_end_lib or single_end_lib or sra_id):
+      print("Error: Please provide paired_end_lib, single_end_lib, or sra_id.")
       sys.exit(-1)
   else:
-    inputs_provided = sum(bool(x) for x in [paired_end_lib, single_end_lib, srr_id])
+    inputs_provided = sum(bool(x) for x in [paired_end_lib, single_end_lib, sra_id])
     if inputs_provided != 1:
-      print("Error: Please provide exactly one of Paired End Library, Single End Library, or SRR Id.")
+      print("Error: Please provide exactly one of Paired End Library, Single End Library, or SRA run accession (sra_id).")
       sys.exit(-1)
 
   # Get the current working directory
@@ -425,11 +478,11 @@ if __name__ == "__main__" :
         print("Error: Failed to fetch single-end read.")
         sys.exit(-1)
 
-    # Process SRR ID (prefetch + fasterq-dump in sra_staging; assembly receives local FASTQs only)
-    elif srr_id:
+    # SRA run accession e.g. SRR… (p3-sra; assembly receives local FASTQs only)
+    elif sra_id:
       try:
         local_read1, local_read2, local_single = ensure_sra_fastqs(
-          output_dir, str(srr_id), job_data
+          output_dir, str(sra_id), job_data
         )
       except Exception as e:
         print(f"Error: SRA staging failed: {e}")
@@ -440,7 +493,7 @@ if __name__ == "__main__" :
     try:
       summary = run_reference_guided_resolved(
         output_dir=output_dir,
-        sample_name=str(job_data.get("output_file") or job_data.get("srr_id") or "sample"),
+        sample_name=str(job_data.get("output_file") or job_data.get("sra_id") or job_data.get("srr_id") or "sample"),
         reference_type=reference_type,
         reference_tokens=reference_tokens,
         email=(job_data.get("email") or os.environ.get("ENTREZ_EMAIL")),
@@ -508,11 +561,11 @@ if __name__ == "__main__" :
 
       run_irma(module, local_read, output_dir=assembly_output_dir)
 
-    # Process SRR ID
-    elif srr_id:
-      r1, r2 = fetch_fastqs_from_sra(srr_id, output_dir=current_directory)
+    # SRA run accession (e.g. SRR…)
+    elif sra_id:
+      r1, r2 = fetch_fastqs_from_sra(sra_id, output_dir=current_directory)
       if not r1:
-        print("Error: Failed to fetch FASTQs for SRR ID.")
+        print("Error: Failed to fetch FASTQs for SRA run accession.")
         sys.exit(-1)
 
       run_irma(module, r1, r2, output_dir=assembly_output_dir)

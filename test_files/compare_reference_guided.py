@@ -214,9 +214,9 @@ def _run_new_locally(job: dict, repo: Path, new_out: Path, old_out_rel: str, new
         read_single = _resolve_local_read_path(se.get("read"), repo, old_out_rel, new_out_rel)
     else:
         # Local-compare convenience:
-        # If the job only specifies srr_id (backend mode), reuse FASTQs produced by the
+        # If the job only specifies sra_id (backend mode), reuse FASTQs produced by the
         # original pipeline run under --old-out.
-        srr = str(job.get("srr_id") or "")
+        srr = str(job.get("sra_id") or job.get("srr_id") or "")
         if srr:
             old_out_abs = Path(old_out_rel)
             if not old_out_abs.is_absolute():
@@ -292,8 +292,8 @@ def main() -> int:
 
         # Speed up local parity: if the old run already produced a real
         # "<SRR>/<SRR>.sra" under --old-out, copy it into the new output so
-        # run_reference_guided can skip prefetch.
-        srr = str(job.get("srr_id") or "")
+        # run_reference_guided uses the same p3-sra staging path as production when sra_id is set.
+        srr = str(job.get("sra_id") or job.get("srr_id") or "")
         if srr:
             old_sra = old_out / srr / f"{srr}.sra"
             new_sra = new_out / srr / f"{srr}.sra"
@@ -306,7 +306,7 @@ def main() -> int:
 
     # Load job to infer sample name and expected outputs
     job = json.loads(job_json.read_text())
-    sample = str(job.get("output_file") or job.get("srr_id") or "sample")
+    sample = str(job.get("output_file") or job.get("sra_id") or job.get("srr_id") or "sample")
 
     # Old consensus (original script writes either <sample>.consensus.multi.fasta or <sample>.consensus.<seg>.fasta etc.)
     old_cons = _find_first(

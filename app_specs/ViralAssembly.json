@@ -45,9 +45,9 @@
     },
     {
       "default": null,
-      "desc": "Sequence Read Archive (SRA) Run ID",
-      "id": "srr_id",
-      "label": "SRR ID",
+      "desc": "SRA run accession (e.g. SRR12345678) used with p3-sra when reads are not uploaded",
+      "id": "sra_id",
+      "label": "SRA run ID",
       "required": 0,
       "type": "string"
     },
@@ -95,7 +95,7 @@
     {
       "default": null,
       "desc": "GenBank accession(s) for reference-guided assembly when reference type is genbank (use ACC1;ACC2 for multiple)",
-      "id": "reference_input",
+      "id": "reference_genbank_accession",
       "label": "GenBank reference (accession)",
       "required": 0,
       "type": "string"
