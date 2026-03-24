@@ -24,7 +24,7 @@ For reference-guided jobs, the script:
 - **Obtains input reads** from exactly one source:
   - **Paired-end reads**: `paired_end_lib.read1` + `paired_end_lib.read2`
   - **Single-end reads**: `single_end_lib.read`
-  - **SRA**: `srr_id` (downloads reads via `p3-sra`)
+  - **SRA**: `srr_id` (stages SRA/FASTQ via `prefetch`/`fasterq-dump` when enabled)
 - **Resolves the reference** and runs the pipeline in `scripts/reference_guided_assembly.py`:
   - `fastp` trimming
   - `bwa mem` alignment
@@ -40,6 +40,28 @@ For reference-guided jobs, the script:
 - **Workspace paths (`ws:`)**: In BV-BRC production, `paired_end_lib.read1/read2` and `single_end_lib.read` are typically workspace paths and are fetched with `p3-cp`.
   - Local paths (like `old_results/SRR..._1.fastq`) are **not** valid for the `p3-cp ws:` fetch step.
   - For local testing of reference-guided assembly, call `run_reference_guided(...)` directly (see below), or use the local-compare runner in `test_files/compare_reference_guided.py`.
+
+### Local setup and run (quickstart)
+
+Required tools in your env:
+
+- `python3`, `fastp`, `bwa`, `samtools`, `bcftools`, `quast.py`
+- for SRA jobs: `prefetch`, `fasterq-dump`
+- Python package: `biopython`
+
+Recommended local invocation:
+
+```bash
+/home/<user>/miniconda3/bin/conda run -n bvbrc python3 scripts/run_viral_assembly.py -j <job.json> -o <out_dir>
+```
+
+Example:
+
+```bash
+/home/<user>/miniconda3/bin/conda run -n bvbrc python3 scripts/run_viral_assembly.py \
+  -j test_files/job_reference_guided_genbank_nc001474.json \
+  -o runs/local_one_job
+```
 
 ## UI → service JSON contract (reference-guided)
 
@@ -61,6 +83,8 @@ At minimum, the UI must provide:
 - `align_threads`, `fastp_threads`: tool thread knobs.
 - `region`: restricts `bcftools mpileup` to a contig/region.
 - `depth_cutoff`: integer depth cutoff for masking low-coverage bases with `N` (default `10`, `0` disables).
+- `download_sra_from_prefetch` (bool): stage `<out>/<SRR>/<SRR>.sra` with `prefetch` when missing.
+- `download_fastqs_from_sra` (bool): run `fasterq-dump` when reads are not already provided.
 
 ### Segmented references / multi-contig consensus
 
@@ -119,6 +143,32 @@ Optional segmented keys:
   "single_end_lib": { "read": "ws:/path/reads.fastq" }
 }
 ```
+
+### Expected outputs
+
+Top-level output folder contains final human-consumable artifacts; intermediate/tool files are under `output_files/`.
+
+Top-level (typical):
+
+- `AssemblyReport.html`
+- `report.html` (QUAST moved up from quast subdir)
+- consensus FASTA(s):
+  - `<sample>.consensus.<accession_or_segment>.fasta`
+  - `<sample>.consensus.multi.fasta`
+  - FASTA single-reference alias (when applicable): `<sample>.consensus.<ref_label>.fasta`
+
+`output_files/` (typical):
+
+- staged reads (`reads_1.fastq`, `reads_2.fastq` or `reads.fastq`)
+- trimmed reads
+- reference index files (`.amb/.ann/.bwt/.pac/.sa/.fai`)
+- alignment/variant files (`.sam`, `.sorted.bam`, `.bai`, `.vcf.gz`, `.csi`)
+- low-coverage BED (`*.lowcov_dp<cutoff>.bed`)
+- `ref_cache/` with fetched GenBank FASTAs for accession-based jobs
+
+SRA note:
+
+- For `srr_id` jobs with SRA download enabled, SRA content is staged under `<out_dir>/<SRR>/`.
 
 ## Local parity testing and comparison (old vs new)
 

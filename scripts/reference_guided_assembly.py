@@ -44,6 +44,44 @@ def _safe_segment_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", name)
 
 
+def _reference_label_from_token(token: str) -> str:
+    """
+    Derive a stable file-label from a reference token (path or accession).
+    For paths, use the basename without extension. For accessions/other
+    tokens, use the token itself.
+    """
+    t = str(token).strip()
+    p = Path(os.path.expanduser(t))
+    # Accessions like NC_045512.2 contain dots but are not file paths.
+    # Only apply suffix/stem logic when this actually looks like a path.
+    if p.exists() or ("/" in t) or ("\\" in t):
+        return _safe_segment_name(p.stem)
+    return _safe_segment_name(t)
+
+def _rewrite_consensus_headers(cons_fa: Path, sample_name: str) -> None:
+    """
+    Rewrite FASTA headers in a consensus file so that each header starts with
+    '<sample>.consensus.<orig_header_token>'.
+    """
+    if not cons_fa.exists():
+        return
+    lines: List[str] = []
+    with open(cons_fa) as inp:
+        for line in inp:
+            if line.startswith(">"):
+                orig = line[1:].strip().split()[0]
+                # Avoid double-prefixing if already in the desired form.
+                if orig.startswith(f"{sample_name}.consensus."):
+                    new_header = orig
+                else:
+                    new_header = f"{sample_name}.consensus.{orig}"
+                lines.append(f">{new_header}\n")
+            else:
+                lines.append(line)
+    with open(cons_fa, "w") as out:
+        out.writelines(lines)
+
+
 def build_multifasta_from_paths(
     fastas: List[Path],
     out_fa: Path,
@@ -238,8 +276,12 @@ def run_reference_guided(
     """
     outdir = ensure_dir(Path(output_dir))
 
-    sample_name = job_data.get("output_file") or job_data.get("srr_id") or "sample"
-    sample_name = str(sample_name)
+    # Naming convention:
+    # - If `srr_id` is provided, use it as the prefix for consensus/outputs.
+    # - Otherwise fall back to `output_file`.
+    # This ensures filenames look like: <SRA/sample>.consensus.<ref-label>.fasta
+    srr_id = job_data.get("srr_id")
+    sample_name = str(srr_id or job_data.get("output_file") or "sample")
 
     reference_type = (job_data.get("reference_type") or "").lower()
     if reference_type not in {"genbank", "fasta"}:
@@ -247,8 +289,132 @@ def run_reference_guided(
 
     email = job_data.get("email") or os.environ.get("ENTREZ_EMAIL")
 
-    # Resolve reference FASTA(s)
-    ref_cache = ensure_dir(outdir / "ref_cache")
+    # If job has srr_id:
+    #  - Always ensure a real "<outdir>/<SRR>/<SRR>.sra" exists (prefetch or local copy)
+    #  - Only run fasterq-dump when reads were not already provided by the caller.
+    reads_provided = bool(read1 or read2 or read_single)
+    if srr_id:
+        srr_out_dir = outdir  # keep downloads under the output root
+        sra_folder = ensure_dir(outdir / str(srr_id))
+        sra_path = sra_folder / f"{srr_id}.sra"
+
+        # Ensure SRA exists.
+        # Local testing note:
+        # - In many dev/WSL setups `prefetch` may be permission-limited.
+        # - If a valid local SRA file already exists (e.g. from a previous run),
+        #   copy it into the output folder to preserve the expected layout.
+        if not sra_path.exists() or sra_path.stat().st_size == 0:
+            # 1) Try copying an existing local SRA from common locations.
+            repo_root = Path(__file__).resolve().parents[1]
+            local_candidates = [
+                Path.cwd() / str(srr_id) / f"{srr_id}.sra",
+                repo_root / str(srr_id) / f"{srr_id}.sra",
+            ]
+            for cand in local_candidates:
+                if cand.exists() and cand.stat().st_size > 0:
+                    ensure_dir(sra_folder)
+                    shutil.copy2(str(cand), str(sra_path))
+                    break
+            else:
+                # 2) Optionally download if explicitly enabled.
+                if not bool(job_data.get("download_sra_from_prefetch", False)):
+                    raise RuntimeError(
+                        f"SRR SRA file not found at {sra_path} and local copy candidates are missing. "
+                        "Set job_data.download_sra_from_prefetch=true to enable `prefetch`, "
+                        "or provide read1/read2 to run without SRA download."
+                    )
+                try:
+                    run_command(
+                        f"prefetch -O {srr_out_dir} {srr_id}",
+                        f"prefetch {srr_id}",
+                    )
+                except Exception as e:
+                    raise RuntimeError(
+                        f"prefetch failed for {srr_id}: {e}"
+                    )
+
+        if not sra_path.exists() or sra_path.stat().st_size == 0:
+            # Be tolerant to different prefetch directory layouts.
+            candidates = sorted(
+                outdir.glob(f"**/{srr_id}.sra"),
+                key=lambda p: len(p.parts),
+            )
+            if candidates:
+                sra_path = candidates[0]
+            else:
+                raise RuntimeError(f"Expected SRA file not found after prefetch: {sra_path}")
+
+        if not reads_provided:
+            # Local parity note:
+            # Some environments (or CI) may not allow `fasterq-dump` due to
+            # disk/memory limits. By default we only ensure the SRA file exists;
+            # FASTQ download is opt-in via `download_fastqs_from_sra: true`.
+            download_fastqs = bool(job_data.get("download_fastqs_from_sra", False))
+            if not download_fastqs:
+                raise RuntimeError(
+                    f"Reads were not provided for SRR job {srr_id}. "
+                    "FASTQ download is disabled by default to avoid fasterq-dump "
+                    "resource limits. Set job_data.download_fastqs_from_sra=true "
+                    "to enable fasterq-dump."
+                )
+
+            fq1 = outdir / f"{srr_id}_1.fastq"
+            fq2 = outdir / f"{srr_id}_2.fastq"
+            fqs = outdir / f"{srr_id}.fastq"
+            alt_fq1 = outdir / str(srr_id) / f"{srr_id}_1.fastq"
+            alt_fq2 = outdir / str(srr_id) / f"{srr_id}_2.fastq"
+            alt_fqs = outdir / str(srr_id) / f"{srr_id}.fastq"
+
+            have_fastqs = (fq1.exists() and fq2.exists()) or fqs.exists() or (
+                alt_fq1.exists() and alt_fq2.exists()
+            ) or alt_fqs.exists()
+
+            if not have_fastqs:
+                fasterq_cmd = f"fasterq-dump -O {srr_out_dir} {srr_id}"
+                disk_limit = job_data.get("fasterq_dump_disk_limit")
+                disk_limit_tmp = job_data.get("fasterq_dump_disk_limit_tmp")
+                fasterq_temp_dir = job_data.get("fasterq_dump_temp_dir")
+                if disk_limit is not None:
+                    fasterq_cmd += f" --disk-limit {disk_limit}"
+                if disk_limit_tmp is not None:
+                    fasterq_cmd += f" --disk-limit-tmp {disk_limit_tmp}"
+                if fasterq_temp_dir:
+                    fasterq_cmd += f" --temp {fasterq_temp_dir}"
+                try:
+                    run_command(
+                        fasterq_cmd,
+                        f"fasterq-dump {srr_id}",
+                    )
+                except Exception as e:
+                    raise RuntimeError(
+                        "SRR-based job requires local SRA tool (`fasterq-dump`) "
+                        f"when reads are not provided. fasterq-dump failed for {srr_id}: {e}"
+                    )
+
+            # Pick the read files.
+            if fq1.exists() and fq2.exists():
+                read1 = str(fq1)
+                read2 = str(fq2)
+                read_single = None
+            elif fqs.exists():
+                read_single = str(fqs)
+                read1 = None
+                read2 = None
+            elif alt_fq1.exists() and alt_fq2.exists():
+                read1, read2 = str(alt_fq1), str(alt_fq2)
+                read_single = None
+            elif alt_fqs.exists():
+                read_single = str(alt_fqs)
+                read1, read2 = None, None
+            else:
+                raise RuntimeError(
+                    f"FASTQ files not found after fasterq-dump for {srr_id}."
+                )
+
+    # Use a dedicated output-files folder for non-primary artifacts.
+    output_files_dir = ensure_dir(outdir / "output_files")
+    # Resolve/cache references under output_files.
+    ref_cache = ensure_dir(output_files_dir / "ref_cache")
 
     segment_names = _parse_string_list(job_data.get("segment_names"))
     ref_tokens = _parse_string_list(job_data.get("reference_fastas")) or _parse_string_list(job_data.get("references"))
@@ -256,9 +422,17 @@ def run_reference_guided(
     ref_token = None
     if reference_type == "genbank":
         if not ref_tokens:
-            ref_token = job_data.get("genbank_accession") or job_data.get("reference_assembly")
-            if not ref_token:
+            # BV-BRC UI may provide multiple accessions in `genbank_accession`
+            # separated by ';'. Support that by splitting into multiple ref tokens.
+            token_val = job_data.get("genbank_accession") or job_data.get("reference_assembly")
+            token_list = _parse_string_list(token_val)
+            if not token_list:
                 raise ValueError("genbank_accession or reference_assembly must be provided for GenBank references.")
+            if len(token_list) > 1:
+                # Treat as segmented/multi-ref input via the existing `ref_tokens` path.
+                ref_tokens = token_list
+            else:
+                ref_token = token_list[0]
     elif reference_type == "fasta":
         if not ref_tokens:
             ref_token = job_data.get("fasta_file") or job_data.get("reference_assembly")
@@ -276,6 +450,7 @@ def run_reference_guided(
         build_multifasta_from_paths(ref_fastas, multi_ref, segment_names=segment_names)
         contigs = segment_names if segment_names else list_contigs_from_fasta(multi_ref)
         single_multi_input = False
+        primary_ref_label = _reference_label_from_token(ref_tokens[0]) if len(ref_tokens) == 1 else "multi_ref"
     else:
         ref_fasta = resolve_reference_fasta(str(ref_token), ref_cache, email)
         if segment_names:
@@ -285,6 +460,7 @@ def run_reference_guided(
                 shutil.copyfile(ref_fasta, multi_ref)
         contigs = segment_names if segment_names else list_contigs_from_fasta(multi_ref)
         single_multi_input = (len(contigs) > 1)
+        primary_ref_label = _reference_label_from_token(str(ref_token))
 
     if not contigs:
         raise ValueError(f"No sequences detected in reference FASTA {multi_ref}")
@@ -374,6 +550,8 @@ def run_reference_guided(
     emit_per_segment = bool(job_data.get("per_segment_consensus")) if single_multi_input else True
 
     consensus_segments: List[str] = []
+    legacy_consensus_files: List[Path] = []
+    root_consensus_alias: Optional[Path] = None
     if not is_segmented:
         consensus_primary = outdir / f"{sample_name}.consensus.fasta"
         run_command(
@@ -389,6 +567,7 @@ def run_reference_guided(
             legacy_name = outdir / f"{sample_name}.consensus.{only}.fasta"
             if legacy_name != consensus_primary:
                 shutil.copyfile(consensus_primary, legacy_name)
+                legacy_consensus_files.append(legacy_name)
         # Also emit a multi-consensus file to mirror the original pipeline.
         consensus_multi = outdir / f"{sample_name}.consensus.multi.fasta"
         if consensus_multi != consensus_primary:
@@ -439,14 +618,77 @@ def run_reference_guided(
     try:
         run_command(quast_cmd, f"QUAST reference-guided {sample_name}")
         quast_txt = quast_dir / "report.txt"
-        quast_html_rel = "quast_reference_guided/report.html"
+        # Move report.html up one level so it sits next to consensus FASTAs.
+        quast_html_src = quast_dir / "report.html"
+        quast_html_top = outdir / "report.html"
+        if quast_html_src.exists():
+            shutil.move(str(quast_html_src), str(quast_html_top))
+            quast_html_rel = "report.html"
+        else:
+            quast_html_rel = ""
     except Exception:
         quast_txt = None
         quast_html_rel = ""
 
+    # Normalize consensus headers to start with "<sample>.consensus.<name>"
+    _rewrite_consensus_headers(consensus_primary, sample_name)
+    for legacy_path in legacy_consensus_files:
+        _rewrite_consensus_headers(legacy_path, sample_name)
+    for seg_path in consensus_segments:
+        _rewrite_consensus_headers(Path(seg_path), sample_name)
+
+    # For FASTA-based jobs, expose a root-level consensus named using the
+    # reference FASTA label (e.g. <sample>.consensus.influenza_ref.fasta).
+    if reference_type == "fasta":
+        root_consensus_alias = outdir / f"{sample_name}.consensus.{primary_ref_label}.fasta"
+        if root_consensus_alias != consensus_primary:
+            shutil.copyfile(consensus_primary, root_consensus_alias)
+            _rewrite_consensus_headers(root_consensus_alias, sample_name)
+
+    # Single-accession GenBank input: keep only contig/accession-named consensus at root.
+    single_genbank_single_ref = (
+        reference_type == "genbank"
+        and len(contigs) == 1
+        and bool(ref_token)
+        and not ref_tokens
+    )
+
+    # After all files are generated, move non-kept top-level files into
+    # "output_files", leaving selected consensus FASTAs (and report.html) at
+    # the top level.
+    output_subdir = output_files_dir
+    # Build a set of consensus filenames to keep at the top level.
+    keep_names = set()
+    if reference_type == "fasta":
+        if root_consensus_alias is not None:
+            keep_names.add(root_consensus_alias.name)
+        keep_names.update(Path(p).name for p in consensus_segments)
+    elif single_genbank_single_ref:
+        keep_names.update(Path(p).name for p in legacy_consensus_files)
+    else:
+        keep_names.add(Path(consensus_primary).name)
+        keep_names.update(Path(p).name for p in legacy_consensus_files)
+        keep_names.update(Path(p).name for p in consensus_segments)
+    keep_names.add("report.html")
+    keep_names.add("AssemblyReport.html")
+    for item in outdir.iterdir():
+        if item.is_dir():
+            # Keep subdirectories where they are.
+            continue
+        if item.name in keep_names:
+            continue
+        # Move everything else into output/.
+        shutil.move(str(item), str(output_subdir / item.name))
+
+    returned_consensus = str(consensus_primary)
+    if reference_type == "fasta" and root_consensus_alias is not None:
+        returned_consensus = str(root_consensus_alias)
+    elif single_genbank_single_ref and legacy_consensus_files:
+        returned_consensus = str(legacy_consensus_files[0])
+
     return {
         "sample": sample_name,
-        "consensus_fasta": str(consensus_primary),
+        "consensus_fasta": returned_consensus,
         "consensus_multi_fasta": str(consensus_primary) if is_segmented else "",
         "consensus_segments": consensus_segments,
         "vcf": str(vcf_gz),

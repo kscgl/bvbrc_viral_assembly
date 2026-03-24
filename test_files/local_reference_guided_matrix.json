@@ -1,0 +1,137 @@
+[
+  {
+    "name": "genbank_paired_single_accession",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "genbank",
+      "reference_assembly": "NC_045512.2",
+      "genbank_accession": "NC_045512.2",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_genbank_paired_single",
+      "email": "you@org.org",
+      "paired_end_lib": {
+        "read1": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR27422853_1.fastq",
+        "read2": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR27422853_2.fastq"
+      }
+    }
+  },
+  {
+    "name": "genbank_single_single_accession",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "genbank",
+      "reference_assembly": "NC_045512.2",
+      "genbank_accession": "NC_045512.2",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_genbank_single_single",
+      "email": "you@org.org",
+      "single_end_lib": {
+        "read": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR27422853_1.fastq"
+      }
+    }
+  },
+  {
+    "name": "genbank_sra_single_accession",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "genbank",
+      "reference_assembly": "NC_045512.2",
+      "genbank_accession": "NC_045512.2",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_genbank_sra_single",
+      "email": "you@org.org",
+      "srr_id": "SRR28752452",
+      "download_sra_from_prefetch": true,
+      "download_fastqs_from_sra": true
+    }
+  },
+  {
+    "name": "genbank_paired_multi_accession",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "genbank",
+      "reference_assembly": "NC_045512.2;MN908947.3",
+      "genbank_accession": "NC_045512.2;MN908947.3",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_genbank_paired_multi",
+      "email": "you@org.org",
+      "paired_end_lib": {
+        "read1": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR27422853_1.fastq",
+        "read2": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR27422853_2.fastq"
+      }
+    }
+  },
+  {
+    "name": "genbank_single_multi_accession",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "genbank",
+      "reference_assembly": "NC_045512.2;MN908947.3",
+      "genbank_accession": "NC_045512.2;MN908947.3",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_genbank_single_multi",
+      "email": "you@org.org",
+      "single_end_lib": {
+        "read": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR27422853_1.fastq"
+      }
+    }
+  },
+  {
+    "name": "genbank_sra_multi_accession",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "genbank",
+      "reference_assembly": "NC_045512.2;MN908947.3",
+      "genbank_accession": "NC_045512.2;MN908947.3",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_genbank_sra_multi",
+      "email": "you@org.org",
+      "srr_id": "SRR28752452",
+      "download_sra_from_prefetch": true,
+      "download_fastqs_from_sra": true
+    }
+  },
+  {
+    "name": "fasta_paired",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "fasta",
+      "reference_assembly": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/test_files/Influenza_Genome.fasta",
+      "fasta_file": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/test_files/Influenza_Genome.fasta",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_fasta_paired",
+      "paired_end_lib": {
+        "read1": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR28752452_1.fastq",
+        "read2": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR28752452_2.fastq"
+      }
+    }
+  },
+  {
+    "name": "fasta_single",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "fasta",
+      "reference_assembly": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/test_files/Influenza_Genome.fasta",
+      "fasta_file": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/test_files/Influenza_Genome.fasta",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_fasta_single",
+      "single_end_lib": {
+        "read": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/original_fresh_run/SRR28752452_1.fastq"
+      }
+    }
+  },
+  {
+    "name": "fasta_sra",
+    "job": {
+      "strategy": "reference_guided",
+      "reference_type": "fasta",
+      "reference_assembly": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/test_files/Influenza_Genome.fasta",
+      "fasta_file": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/test_files/Influenza_Genome.fasta",
+      "output_path": "/user@bvbrc/home/test",
+      "output_file": "rg_fasta_sra",
+      "srr_id": "SRR28752452",
+      "download_sra_from_prefetch": true,
+      "download_fastqs_from_sra": true
+    }
+  }
+]

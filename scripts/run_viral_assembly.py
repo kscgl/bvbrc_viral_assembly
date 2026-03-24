@@ -45,6 +45,27 @@ RETRY_DELAY = 10
 
 def fetch_file_from_ws(ws_path, local_path):
   """Fetch a file from workspace to local path using p3-cp."""
+  # Local fallback: for dev/testing, allow ws_path to be a real local file.
+  if ws_path:
+    ws_str = str(ws_path)
+    ws_expanded = os.path.expanduser(ws_str)
+    local_parent = os.path.dirname(local_path)
+    if local_parent:
+      os.makedirs(local_parent, exist_ok=True)
+
+    # Absolute local path?
+    if os.path.isabs(ws_expanded) and os.path.exists(ws_expanded):
+      shutil.copyfile(ws_expanded, local_path)
+      print(f"Copied local file {ws_expanded} -> {local_path}")
+      return True
+
+    # Relative local path? Treat it as relative to repo root (KB_TOP / script parent).
+    if not os.path.isabs(ws_expanded) and os.path.exists(os.path.join(top, ws_expanded)):
+      src = os.path.join(top, ws_expanded)
+      shutil.copyfile(src, local_path)
+      print(f"Copied local relative file {src} -> {local_path}")
+      return True
+
   cmd = ["p3-cp", f"ws:{ws_path}", local_path]
   try:
     print(f"Fetching file from {ws_path} to {local_path}")
@@ -273,15 +294,27 @@ if __name__ == "__main__" :
   single_end_lib = job_data.get("single_end_lib", {})
   srr_id = job_data.get("srr_id", None)
   strategy = job_data.get("strategy", DEFAULT_STRATEGY)
+  strategy_lower = str(strategy).lower()
   if strategy == "auto":
     strategy = DEFAULT_STRATEGY
   module = job_data.get("module", DEFAULT_IRMA_MODULE)
 
-  # Ensure only one of the inputs is provided
-  inputs_provided = sum(bool(x) for x in [paired_end_lib, single_end_lib, srr_id])
-  if inputs_provided != 1:
-    print("Error: Please provide exactly one of Paired End Library, Single End Library, or SRR Id.")
-    sys.exit(-1)
+  # Input validation:
+  # - IRMA: exactly one of (paired_end_lib, single_end_lib, srr_id)
+  # - reference_guided: allow srr_id together with paired_end_lib/single_end_lib
+  #   so the backend can stage <SRR>.sra while still using provided FASTQs.
+  if strategy_lower == "reference_guided":
+    if paired_end_lib and single_end_lib:
+      print("Error: Please provide only one of paired_end_lib or single_end_lib (not both).")
+      sys.exit(-1)
+    if not (paired_end_lib or single_end_lib or srr_id):
+      print("Error: Please provide paired_end_lib, single_end_lib, or srr_id.")
+      sys.exit(-1)
+  else:
+    inputs_provided = sum(bool(x) for x in [paired_end_lib, single_end_lib, srr_id])
+    if inputs_provided != 1:
+      print("Error: Please provide exactly one of Paired End Library, Single End Library, or SRR Id.")
+      sys.exit(-1)
 
   # Get the current working directory
   current_directory = os.getcwd()
@@ -298,7 +331,7 @@ if __name__ == "__main__" :
     "errors": []
   }
 
-  strategy_lower = str(strategy).lower()
+  # strategy_lower already computed above
 
   if strategy_lower == "reference_guided":
     # Prepare local read paths for reference-guided assembly
@@ -334,14 +367,11 @@ if __name__ == "__main__" :
 
     # Process SRR ID
     elif srr_id:
-      r1, r2 = fetch_fastqs_from_sra(srr_id, output_dir=output_dir)
-      if not r1:
-        print("Error: Failed to fetch FASTQs for SRR ID.")
-        sys.exit(-1)
-      local_read1, local_read2 = r1, r2
-      if local_read2 is None:
-        local_single = local_read1
-        local_read1 = None
+      # For reference-guided mode, don't hard-require `p3-sra` (may not exist in all
+      # dev/containers). Instead, let `reference_guided_assembly.py` do:
+      # - `prefetch` to stage <outdir>/<SRR>/<SRR>.sra (if download_sra_from_prefetch=true)
+      # - optional `fasterq-dump` to create FASTQs (if download_fastqs_from_sra=true)
+      local_read1, local_read2, local_single = None, None, None
 
     # Run reference-guided pipeline
     try:
