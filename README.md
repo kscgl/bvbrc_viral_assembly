@@ -65,43 +65,67 @@ Example:
 
 ## UI → service JSON contract (reference-guided)
 
-At minimum, the UI must provide:
+The form definition in `app_specs/ViralAssembly.json` uses the same reference keys as the table below. Older names (`fasta_file`, `genbank_accession`, `reference_assembly`) are **not** read by the runner.
 
-- `strategy`: `"reference_guided"`
-- `reference_type`: `"fasta"` or `"genbank"`
-- Reference value (depends on `reference_type` only):
-  - **GenBank:** `reference_input` only — one accession, `"acc1;acc2"` for multiple, or a JSON list of accessions.
-  - **FASTA:** `reference_fasta_file` only — one path, `"path1;path2"` for multiple files, or a JSON list of paths.
-- Exactly one read source:
-  - `paired_end_lib` **OR** `single_end_lib` **OR** `srr_id`
-- A sample/output name:
-  - `output_file` (preferred) or `srr_id`
+### Required inputs (every reference-guided job)
 
-### Supported optional keys (reference-guided)
+| Input | Value |
+|-------|--------|
+| `strategy` | `"reference_guided"` |
+| `reference_type` | `"genbank"` or `"fasta"` |
+| Reference sequence | If `reference_type` is **`genbank`**: set **`reference_input`** only (one accession, `"ACC1;ACC2"` for multiple, or a JSON list). If **`fasta`**: set **`reference_fasta_file`** only (one workspace/local path, `"path1;path2"` or a list for multiple files). |
+| Reads (pick **one**) | **`paired_end_lib`**: `read1` and `read2`, **or** **`single_end_lib`**: `read`, **or** **`srr_id`** (SRA run accession). |
+| Output basename | **`output_file`** (recommended). If missing, some jobs fall back to `srr_id`. |
 
-- `email`: required for GenBank fetching if `ENTREZ_EMAIL` isn’t set.
-- `align_threads`, `fastp_threads`: tool thread knobs.
-- `region`: restricts `bcftools mpileup` to a contig/region.
-- `depth_cutoff`: integer depth cutoff for masking low-coverage bases with `N` (default `10`, `0` disables).
-- `download_sra_from_prefetch` / `download_fastqs_from_sra` (bool, optional): override SRA staging. **Defaults are `true`** when `srr_id` is set (UI does not send these). Set to `false` for offline/CI if you must skip `prefetch` / `fasterq-dump`.
+**GenBank-only requirement:** set **`email`** (or environment variable `ENTREZ_EMAIL`) so NCBI sequences can be fetched for `reference_input`.
 
-### Segmented references / multi-contig consensus
+### Optional inputs (tuning and segmented references)
 
-The reference-guided implementation supports segmented references in two ways:
+| Input | Purpose |
+|-------|--------|
+| `segment_names` | For multi-record or multi-token references: list or `"a;b;..."` string; must match the number of reference contigs after resolution. Renames/relabels FASTA headers before alignment when used with a single multi-record FASTA. |
+| `per_segment_consensus` | For a **single** multi-record FASTA: if `true`, also write one consensus FASTA per segment (default is combined-only for that case). |
+| `align_threads`, `fastp_threads` | Thread counts for `bwa` and `fastp`. |
+| `region` | Limit `bcftools mpileup` to one contig/region. |
+| `depth_cutoff` | Depth below which consensus is masked with `N` (default `10`; `0` disables). |
+| `download_sra_from_prefetch`, `download_fastqs_from_sra` | Override SRA staging (default **`true`** when `srr_id` is set). |
 
-- **Single multi-record FASTA**: `reference_fasta_file` points at one FASTA with multiple records.
-  - If `segment_names` is provided, the FASTA headers are rewritten to those names.
-  - By default this emits a combined multi-consensus FASTA; per-segment emission can be controlled via `per_segment_consensus`.
-- **Multiple references**: use multiple tokens in the same field — `reference_input` (GenBank) or `reference_fasta_file` (paths) as a list or semicolon-separated string; tokens are concatenated into one multi-FASTA reference.
+**Segmented / multi-reference behavior (concepts):**
 
-Optional segmented keys:
-
-- `segment_names`: list or semicolon-separated string. Must match the number of FASTA records after reference resolution.
-- `per_segment_consensus`: boolean. If the input is a single multi-record FASTA, default behavior matches the original pipeline (combined-only). Set `true` to also emit per-segment FASTAs.
+- **One multi-record FASTA** (`reference_fasta_file` → one file, many `>` records): optional `segment_names` + `per_segment_consensus` control header labels and per-segment outputs.
+- **Several separate references**: put multiple accessions in `reference_input` or multiple paths in `reference_fasta_file` (list or semicolon-separated); they are concatenated into one alignment reference.
 
 ### JSON examples
 
-**FASTA (paired-end, segmented multi-record FASTA):**
+**1) Minimal FASTA + paired-end reads** (only required inputs; production paths are usually workspace objects):
+
+```json
+{
+  "strategy": "reference_guided",
+  "reference_type": "fasta",
+  "reference_fasta_file": "ws:/path/to/reference.fasta",
+  "output_file": "my_sample",
+  "paired_end_lib": {
+    "read1": "ws:/path/to/R1.fastq",
+    "read2": "ws:/path/to/R2.fastq"
+  }
+}
+```
+
+**2) Minimal GenBank + SRA** (`email` required if `ENTREZ_EMAIL` is not set):
+
+```json
+{
+  "strategy": "reference_guided",
+  "reference_type": "genbank",
+  "reference_input": "NC_001474.2",
+  "output_file": "SRR27422853",
+  "srr_id": "SRR27422853",
+  "email": "you@org.org"
+}
+```
+
+**3) FASTA + paired-end + optional segmented influenza labels** (`segment_names` and `per_segment_consensus` are **not** required; they only apply to this multi-segment FASTA use case):
 
 ```json
 {
@@ -115,29 +139,17 @@ Optional segmented keys:
 }
 ```
 
-**GenBank (SRA reads):**
-
-```json
-{
-  "strategy": "reference_guided",
-  "reference_type": "genbank",
-  "reference_input": "NC_001474.2",
-  "output_file": "SRR27422853",
-  "srr_id": "SRR27422853",
-  "email": "you@org.org"
-}
-```
-
-**Multiple references (segmented tokens):**
+**4) Multiple GenBank accessions + single-end reads** (optional `segment_names` must match the number of reference contigs—here, two accessions → two names):
 
 ```json
 {
   "strategy": "reference_guided",
   "reference_type": "genbank",
   "reference_input": "NC_045512.2;MN908947.3",
-  "segment_names": "seg1;seg2;seg3",
+  "segment_names": "SARS2_ref1;SARS2_ref2",
   "output_file": "sampleX",
-  "single_end_lib": { "read": "ws:/path/reads.fastq" }
+  "single_end_lib": { "read": "ws:/path/reads.fastq" },
+  "email": "you@org.org"
 }
 ```
 
