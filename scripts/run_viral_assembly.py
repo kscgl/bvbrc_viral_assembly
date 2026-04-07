@@ -37,6 +37,7 @@ FLU_AD_INIT = first_existing_path(
 
 DEFAULT_STRATEGY = "IRMA"
 DEFAULT_IRMA_MODULE = "FLU"
+FLU_FALLBACK_MODULE = "FLU-lowQC"
 MAX_RETRIES = 5
 RETRY_DELAY = 10
 
@@ -143,6 +144,16 @@ def run_quast(quast_output_dir, fasta_file, threads=12, min_contig=200):
         print(f"Error running QUAST: {e}")
 
 
+def has_assembly_output(output_dir):
+    """Check if IRMA produced any non-empty FASTA files in the output directory."""
+    if not os.path.isdir(output_dir):
+        return False
+    for f in os.listdir(output_dir):
+        if (f.endswith(".fasta") or f.endswith(".fa")) and os.path.getsize(os.path.join(output_dir, f)) > 0:
+            return True
+    return False
+
+
 def run_irma(mode, input_file1, input_file2=None, output_dir="output"):
     irma_cmd = ["IRMA", mode, input_file1]
     if input_file2:
@@ -153,10 +164,19 @@ def run_irma(mode, input_file1, input_file2=None, output_dir="output"):
 
     try:
         print(f"Running IRMA with command: {' '.join(irma_cmd)}")
-        subprocess.run(irma_cmd, check=True)
-        print("IRMA run completed successfully!")
+        result = subprocess.run(irma_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        irma_output = result.stdout
+        print(irma_output)
+
+        if has_assembly_output(output_dir):
+            print("IRMA run completed successfully with assembly output!")
+            return True, irma_output
+        else:
+            print("IRMA run completed but no assembly output was generated.")
+            return False, irma_output
     except subprocess.CalledProcessError as e:
         print(f"Error running IRMA: {e}")
+        return False, ""
 
 
 def get_software_version(software):
@@ -243,8 +263,23 @@ def generate_html_report(details):
       </section>
       """
 
+    # Handle Notes
+    notes_section = ""
+    notes = details.get("notes", [])
+    if notes:
+        notes_items = "\n".join(f"          <li>{note}</li>" for note in notes)
+        notes_section = f"""
+      <section style='color: #1a5276;'>
+        <h2>Note</h2>
+        <ul>
+{notes_items}
+        </ul>
+      </section>
+      """
+
     # Replace placeholders
     html_content = template.replace("{{ report_date }}", report_date)
+    html_content = html_content.replace("{{ notes_section }}", notes_section)
     html_content = html_content.replace("{{ quast_section }}", quast_section)
     html_content = html_content.replace("{{ tools_table }}", tools_table)
     html_content = html_content.replace("{{ errors_section }}", errors_section)
@@ -301,9 +336,11 @@ if __name__ == "__main__":
     os.chdir(output_dir)
     # output_file = os.path.join(output_dir, job_data.get("output_file", "sample"))
     assembly_output_dir = os.path.join(output_dir, strategy)
+    lowqc_output_dir = os.path.join(output_dir, f"{strategy}_lowQC")
 
     report_details = {
-        "errors": []
+        "errors": [],
+        "notes": []
     }
 
     # Process paired-end library
@@ -321,7 +358,14 @@ if __name__ == "__main__":
             print("Error: Failed to fetch paired-end reads.")
             sys.exit(-1)
 
-        run_irma(module, local_read1, local_read2, output_dir=assembly_output_dir)
+        success, irma_output = run_irma(module, local_read1, local_read2, output_dir=assembly_output_dir)
+        if not success and module == "FLU":
+            if "found no QC'd data" in irma_output:
+                report_details["notes"].append(
+                    f"FLU module found no QC'd data. Assembly was re-run with the {FLU_FALLBACK_MODULE} module.")
+            print(f"FLU module produced no assembly output. Retrying with {FLU_FALLBACK_MODULE} module...")
+            run_irma(FLU_FALLBACK_MODULE, local_read1, local_read2, output_dir=lowqc_output_dir)
+            assembly_output_dir = lowqc_output_dir
 
     # Process single-end library
     elif single_end_lib:
@@ -336,7 +380,14 @@ if __name__ == "__main__":
             print("Error: Failed to fetch single-end read.")
             sys.exit(-1)
 
-        run_irma(module, local_read, output_dir=assembly_output_dir)
+        success, irma_output = run_irma(module, local_read, output_dir=assembly_output_dir)
+        if not success and module == "FLU":
+            if "found no QC'd data" in irma_output:
+                report_details["notes"].append(
+                    f"FLU module found no QC'd data. Assembly was re-run with the {FLU_FALLBACK_MODULE} module.")
+            print(f"FLU module produced no assembly output. Retrying with {FLU_FALLBACK_MODULE} module...")
+            run_irma(FLU_FALLBACK_MODULE, local_read, output_dir=lowqc_output_dir)
+            assembly_output_dir = lowqc_output_dir
 
     # Process SRR ID
     elif srr_id:
@@ -345,7 +396,14 @@ if __name__ == "__main__":
             print("Error: Failed to fetch FASTQs for SRR ID.")
             sys.exit(-1)
 
-        run_irma(module, r1, r2, output_dir=assembly_output_dir)
+        success, irma_output = run_irma(module, r1, r2, output_dir=assembly_output_dir)
+        if not success and module == "FLU":
+            if "found no QC'd data" in irma_output:
+                report_details["notes"].append(
+                    f"FLU module found no QC'd data. Assembly was re-run with the {FLU_FALLBACK_MODULE} module.")
+            print(f"FLU module produced no assembly output. Retrying with {FLU_FALLBACK_MODULE} module...")
+            run_irma(FLU_FALLBACK_MODULE, r1, r2, output_dir=lowqc_output_dir)
+            assembly_output_dir = lowqc_output_dir
 
     fasta_file = os.path.join(current_directory, f"{job_data.get('output_file', 'sample')}_all.fasta")
     is_concatenated = concatenate_fasta_files(assembly_output_dir, fasta_file)
@@ -379,3 +437,4 @@ if __name__ == "__main__":
     html_report = generate_html_report(report_details)
     with open(os.path.join(output_dir, "AssemblyReport.html"), "w") as output_file:
         output_file.write(html_report)
+
