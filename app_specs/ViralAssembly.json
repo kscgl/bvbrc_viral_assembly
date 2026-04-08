@@ -56,7 +56,7 @@
       "desc": "Strategy used for assembly",
       "enum": [
         "auto",
-	"irma"
+        "irma"
       ],
       "id": "strategy",
       "label": "Assembly strategy",
@@ -67,12 +67,22 @@
       "desc": "Virus genome to use a correct module",
       "enum": [
         "FLU",
+        "FLU-alt",
+        "FLU-avian",
+        "FLU-avian-residual",
+        "FLU-fast",
+        "FLU-lowQC",
+        "FLU-minion",
+        "FLU-pacbio",
+        "FLU-pgm",
+        "FLU-roche",
+        "FLU-secondary",
+        "FLU-sensitive",
+        "FLU-utr",
         "CoV",
         "RSV",
         "EBOLA",
-        "FLU_AD",
-        "FLU-utr",
-        "FLU-minion"
+        "FLU_AD"
       ],
       "id": "module",
       "label": "Virus module",
