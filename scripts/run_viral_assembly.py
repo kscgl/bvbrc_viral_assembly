@@ -317,11 +317,12 @@ def get_software_version(software):
     # Decode tolerantly — some tools (e.g. samtools) include non-UTF-8 chars like ©
     text = output.decode("utf-8", errors="replace")
 
-    # bwa embeds version as "Version: X.X.X" inside the usage block
+    # bwa embeds version as "Version: X.X.X" inside the usage block; strip the label
     if software in _VERSION_STDERR_TOOLS:
       for line in text.splitlines():
         if "version:" in line.lower():
-          version = line.strip()
+          # Extract just the version string after the colon, e.g. "0.7.17-r1188"
+          version = line.split(":", 1)[-1].strip()
           print(f"{software} version: {version}")
           return version
       return "Unknown"
