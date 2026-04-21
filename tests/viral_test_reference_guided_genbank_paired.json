@@ -1,14 +1,12 @@
 {
   "strategy": "reference_guided",
   "reference_type": "genbank",
-  "reference_assembly": "NC_012345.1",
-  "genbank_accession": "NC_012345.1",
-  "output_path": "/user@bvbrc/home/output",
+  "reference_genbank_accession": "NC_045512.2",
+  "output_path": "/mkuscuog@bvbrc/home/assembly/reference_guided",
   "output_file": "viral_ref_guided_genbank_paired",
   "paired_end_lib": {
-    "read1": "/user@bvbrc/home/read_1.fastq",
-    "read2": "/user@bvbrc/home/read_2.fastq"
-  },
-  "email": "you@org.org"
+    "read1": "/mkuscuog@bvbrc/home/assembly/reference_guided/SRR27422853_1.fastq",
+    "read2": "/mkuscuog@bvbrc/home/assembly/reference_guided/SRR27422853_2.fastq"
+  }
 }
 

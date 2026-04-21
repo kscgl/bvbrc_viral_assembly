@@ -1,10 +1,10 @@
 {
   "strategy": "reference_guided",
   "reference_type": "fasta",
-  "reference_assembly": "/user@bvbrc/home/reference.fasta",
+  "reference_fasta_file": "/mkuscuog@bvbrc/home/assembly/reference_guided/Influenza_Genome.fasta",
   "fasta_file": "/user@bvbrc/home/reference.fasta",
-  "output_path": "/user@bvbrc/home/output",
+  "output_path": "/mkuscuog@bvbrc/home/assembly/reference_guided",
   "output_file": "viral_ref_guided_fasta_sra",
-  "srr_id": "SRR1234567"
+  "sra_id": "SRR28752452"
 }
 
