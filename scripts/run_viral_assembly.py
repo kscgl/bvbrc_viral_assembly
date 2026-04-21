@@ -293,18 +293,42 @@ def run_irma(mode, input_file1, input_file2=None, output_dir="output"):
     return False, ""
 
 
+# Tools that print version info to stderr (or with no args) rather than --version stdout.
+_VERSION_STDERR_TOOLS = {"bwa"}
+
 def get_software_version(software):
   try:
-    result = subprocess.run(
-      [software, "--version"],
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
-      text=True,
-    )
-    # Get only the first line of the output
-    version = result.stdout.splitlines()[0]
+    if software in _VERSION_STDERR_TOOLS:
+      # e.g. bwa: called with no args, version line appears in stderr
+      result = subprocess.run(
+        [software],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+      )
+      output = result.stderr
+    else:
+      result = subprocess.run(
+        [software, "--version"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+      )
+      output = result.stdout or result.stderr
+
+    # Decode tolerantly — some tools (e.g. samtools) include non-UTF-8 chars like ©
+    text = output.decode("utf-8", errors="replace")
+
+    # bwa embeds version as "Version: X.X.X" inside the usage block
+    if software in _VERSION_STDERR_TOOLS:
+      for line in text.splitlines():
+        if "version:" in line.lower():
+          version = line.strip()
+          print(f"{software} version: {version}")
+          return version
+      return "Unknown"
+
+    version = text.splitlines()[0].strip()
     print(f"{software} version: {version}")
-    return version.strip()
+    return version
   except Exception as e:
     print(f"Error fetching {software} version: {e}")
     return "Unknown"
