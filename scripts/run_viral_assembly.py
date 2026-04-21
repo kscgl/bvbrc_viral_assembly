@@ -38,6 +38,7 @@ FLU_AD_INIT = first_existing_path(
     "/home/ac.mkuscuog/git/dev_container/modules/bvbrc_viral_assembly/lib/flu_ad_init.sh",
 )
 
+ENTREZ_EMAIL = "mkuscuog@jcvi.org"
 DEFAULT_STRATEGY = "IRMA"
 DEFAULT_IRMA_MODULE = "FLU"
 FLU_FALLBACK_MODULE = "FLU-lowQC"
@@ -539,7 +540,7 @@ if __name__ == "__main__":
         sample_name=str(job_data.get("output_file") or sra_id or "sample"),
         reference_type=reference_type,
         reference_tokens=reference_tokens,
-        email=(job_data.get("email") or os.environ.get("ENTREZ_EMAIL")),
+        email=(job_data.get("email") or os.environ.get("ENTREZ_EMAIL") or ENTREZ_EMAIL),
         read1=local_read1,
         read2=local_read2,
         read_single=local_single,
