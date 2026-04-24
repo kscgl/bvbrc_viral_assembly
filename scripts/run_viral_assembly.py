@@ -181,12 +181,27 @@ def _resolve_reference_inputs(job_data):
   """
   Read reference tokens from job JSON (runner-only). No legacy key aliases.
 
+  - reference_type genome/auto: require reference_genome_id (BV-BRC genome ID, e.g. '11060.9352').
   - reference_type genbank: require reference_genbank_accession (string, list, or ';'-separated accessions).
   - reference_type fasta: require reference_fasta_file (path string, list, or ';'-separated paths).
+
+  Both 'genome' and 'auto' are normalised to 'genome' so downstream code has a single branch.
   """
   reference_type = str(job_data.get("reference_type") or "").lower()
-  if reference_type not in {"genbank", "fasta"}:
-    raise ValueError("reference_type must be 'genbank' or 'fasta' for reference-guided strategy.")
+  if reference_type not in {"genome", "auto", "genbank", "fasta"}:
+    raise ValueError(
+      "reference_type must be 'genome', 'auto', 'genbank', or 'fasta' for reference-guided strategy."
+    )
+
+  if reference_type in {"genome", "auto"}:
+    genome_id = str(job_data.get("reference_genome_id") or "").strip()
+    if not genome_id:
+      raise ValueError(
+        "reference_genome_id is required when reference_type is 'genome' or 'auto' "
+        "(e.g. '11060.9352')."
+      )
+    # Normalise to a single internal type so the pipeline needs only one branch.
+    return "genome", [genome_id]
 
   if reference_type == "genbank":
     tokens = _parse_string_list(job_data.get("reference_genbank_accession"))

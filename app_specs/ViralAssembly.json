@@ -95,6 +95,8 @@
       "default": null,
       "desc": "Reference type for reference-guided assembly",
       "enum": [
+        "genome",
+        "auto",
         "genbank",
         "fasta"
       ],
@@ -102,6 +104,14 @@
       "label": "Reference type",
       "required": 0,
       "type": "enum"
+    },
+    {
+      "default": null,
+      "desc": "BV-BRC genome ID for reference-guided assembly when reference type is genome or auto (e.g. 11060.9352)",
+      "id": "reference_genome_id",
+      "label": "Reference genome ID",
+      "required": 0,
+      "type": "string"
     },
     {
       "default": null,

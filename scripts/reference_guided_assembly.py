@@ -168,6 +168,41 @@ def is_probable_accession(token: str) -> bool:
     return ("/" not in token) and ("\\" not in token)
 
 
+def is_bvbrc_genome_id(token: str) -> bool:
+    """Return True if token looks like a BV-BRC genome ID (digits.digits, e.g. '11060.9352')."""
+    return bool(re.match(r"^\d+\.\d+$", token.strip()))
+
+
+def fetch_bvbrc_genome_to_fasta(genome_id: str, out_fa: Path) -> Path:
+    """
+    Download the nucleotide FASTA for a BV-BRC genome ID (e.g. '11060.9352')
+    using the ``p3-genome-fasta`` CLI tool (available in the BV-BRC runtime).
+    """
+    genome_id = genome_id.strip()
+
+    try:
+        out = subprocess.check_output(
+            ["p3-genome-fasta", genome_id],
+            stderr=subprocess.DEVNULL,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        raise ValueError(
+            f"p3-genome-fasta failed for genome_id {genome_id!r}: {e}. "
+            f"Verify that the genome exists and is publicly accessible."
+        ) from e
+
+    if not out or not out.strip().startswith(b">"):
+        raise ValueError(
+            f"p3-genome-fasta returned no FASTA content for genome_id {genome_id!r}. "
+            f"Verify that the genome exists and is publicly accessible."
+        )
+
+    with open(out_fa, "wb") as fh:
+        fh.write(out)
+    print(f"[BV-BRC] Downloaded genome {genome_id} via p3-genome-fasta -> {out_fa}")
+    return out_fa
+
+
 def fetch_genbank_to_fasta(accession: str, email: str, out_fa: Path) -> Path:
     if not email:
         raise ValueError("Entrez email is required when using GenBank references for reference-guided assembly.")
@@ -184,13 +219,25 @@ def fetch_genbank_to_fasta(accession: str, email: str, out_fa: Path) -> Path:
 
 def resolve_reference_fasta(token: str, cache_dir: Path, email: Optional[str]) -> Path:
     """
-    Resolve a single reference token that is either a local path or a GenBank accession into a local FASTA path.
+    Resolve a single reference token into a local FASTA path.
+
+    Resolution order:
+    1. Local file path  — returned as-is if the file exists.
+    2. BV-BRC genome ID (digits.digits, e.g. '11060.9352') — fetched via
+       ``fetch_bvbrc_genome_to_fasta`` and cached under *cache_dir*.
+    3. GenBank accession — fetched via Entrez and cached under *cache_dir*.
     """
     ensure_dir(cache_dir)
     tok = token.strip()
     p = Path(os.path.expanduser(tok)).resolve()
     if p.exists():
         return p
+
+    if is_bvbrc_genome_id(tok):
+        out_fa = cache_dir / f"bvbrc_{tok}.fasta"
+        if not out_fa.exists() or out_fa.stat().st_size == 0:
+            fetch_bvbrc_genome_to_fasta(tok, out_fa)
+        return out_fa
 
     if not is_probable_accession(tok):
         raise FileNotFoundError(f"Reference path not found: {tok}")
@@ -271,8 +318,8 @@ def run_reference_guided_resolved(
     """
     Preferred entrypoint: resolved inputs from run_viral_assembly (local paths, accessions).
     """
-    if reference_type not in {"genbank", "fasta"}:
-        raise ValueError("reference_type must be 'genbank' or 'fasta'.")
+    if reference_type not in {"genome", "genbank", "fasta"}:
+        raise ValueError("reference_type must be 'genome', 'genbank', or 'fasta'.")
     if not reference_tokens:
         raise ValueError("reference_tokens must contain at least one value.")
 
@@ -363,8 +410,8 @@ def run_reference_guided_core(
     outdir = ensure_dir(Path(output_dir))
 
     reference_type = (reference_type or "").lower()
-    if reference_type not in {"genbank", "fasta"}:
-        raise ValueError("reference_type must be 'genbank' or 'fasta' for reference-guided strategy.")
+    if reference_type not in {"genome", "genbank", "fasta"}:
+        raise ValueError("reference_type must be 'genome', 'genbank', or 'fasta' for reference-guided strategy.")
 
     email = email or os.environ.get("ENTREZ_EMAIL")
 
@@ -582,9 +629,9 @@ def run_reference_guided_core(
             shutil.copyfile(consensus_primary, root_consensus_alias)
             _rewrite_consensus_headers(root_consensus_alias, sample_name)
 
-    # Single-accession GenBank input: keep only contig/accession-named consensus at root.
+    # Single-accession GenBank/genome input: keep only contig-named consensus at root.
     single_genbank_single_ref = (
-        reference_type == "genbank"
+        reference_type in {"genbank", "genome"}
         and len(contigs) == 1
         and bool(ref_token)
         and not ref_tokens
@@ -600,7 +647,7 @@ def run_reference_guided_core(
         if root_consensus_alias is not None:
             keep_names.add(root_consensus_alias.name)
         keep_names.update(Path(p).name for p in consensus_segments)
-    elif single_genbank_single_ref:
+    elif single_genbank_single_ref:  # genbank or genome, single contig
         keep_names.update(Path(p).name for p in legacy_consensus_files)
     else:
         keep_names.add(Path(consensus_primary).name)
@@ -620,7 +667,7 @@ def run_reference_guided_core(
     returned_consensus = str(consensus_primary)
     if reference_type == "fasta" and root_consensus_alias is not None:
         returned_consensus = str(root_consensus_alias)
-    elif single_genbank_single_ref and legacy_consensus_files:
+    elif single_genbank_single_ref and legacy_consensus_files:  # genbank or genome, single contig
         returned_consensus = str(legacy_consensus_files[0])
 
     return {
