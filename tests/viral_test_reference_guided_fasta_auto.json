@@ -4,7 +4,7 @@
   "reference_genome_id": "11060.9352",
   "output_path": "/mkuscuog@bvbrc/home/assembly/reference_guided",
   "output_file": "viral_ref_guided_fasta_auto",
-  "single_end_lib": {
+  "paired_end_lib": {
     "read1": "/mkuscuog@bvbrc/home/assembly/reference_guided/SRR27422853_1.fastq",
     "read2": "/mkuscuog@bvbrc/home/assembly/reference_guided/SRR27422853_2.fastq"
   }
