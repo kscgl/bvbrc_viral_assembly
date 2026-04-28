@@ -25,7 +25,10 @@ For reference-guided jobs, the script:
   - **Paired-end reads**: `paired_end_lib.read1` + `paired_end_lib.read2`
   - **Single-end reads**: `single_end_lib.read`
   - **SRA**: `sra_id` (run accession, e.g. `SRR28752452`) — **`p3-sra`** runs in **`scripts/run_viral_assembly.py`** by default; assembly receives local FASTQs only.
-- **Stages reference FASTA** (`reference_type: fasta`) into `reference_inputs/` via the same fetch helper as reads, then **resolves GenBank** accessions or local FASTAs and runs the science pipeline in `scripts/reference_guided_assembly.py`:
+- **Resolves reference FASTA** based on `reference_type` and runs the science pipeline in `scripts/reference_guided_assembly.py`:
+  - `reference_type: genome` / `auto` — fetches the genome sequence from BV-BRC using **`p3-genome-fasta <genome_id>`** (e.g. `11060.9352`); result is cached as `bvbrc_<id>.fasta` under `output_files/ref_cache/`.
+  - `reference_type: fasta` — stages the workspace FASTA into `reference_inputs/` via `p3-cp`.
+  - `reference_type: genbank` — fetches from NCBI Entrez (requires `email` or `ENTREZ_EMAIL`); result is cached as `<accession>.fasta` under `output_files/ref_cache/`.
   - `fastp` trimming
   - `bwa mem` alignment
   - `samtools` sort/index + depth
@@ -47,6 +50,7 @@ Required tools in your env:
 
 - `python3`, `fastp`, `bwa`, `samtools`, `bcftools`, `quast.py`
 - for SRA jobs in BV-BRC: `p3-sra` on `PATH`
+- for `genome`/`auto` reference jobs in BV-BRC: `p3-genome-fasta` on `PATH`
 - Python package: `biopython`
 
 Recommended local invocation:
@@ -72,12 +76,13 @@ The form definition in `app_specs/ViralAssembly.json` matches the table below. O
 | Input | Value |
 |-------|--------|
 | `strategy` | `"reference_guided"` |
-| `reference_type` | `"genbank"` or `"fasta"` |
-| Reference sequence | If `reference_type` is **`genbank`**: set **`reference_genbank_accession`** only (one accession, `"ACC1;ACC2"` for multiple, or a JSON list). If **`fasta`**: set **`reference_fasta_file`** only (one workspace/local path, `"path1;path2"` or a list for multiple files). |
+| `reference_type` | `"genome"`, `"auto"`, `"genbank"`, or `"fasta"` |
+| Reference sequence | If `reference_type` is **`genome`** or **`auto`**: set **`reference_genome_id`** (BV-BRC genome ID, e.g. `"11060.9352"`). If **`genbank`**: set **`reference_genbank_accession`** (one accession, `"ACC1;ACC2"` for multiple, or a JSON list). If **`fasta`**: set **`reference_fasta_file`** (one workspace/local path, `"path1;path2"` or a list for multiple files). |
 | Reads (pick **one**) | **`paired_end_lib`**: `read1` and `read2`, **or** **`single_end_lib`**: `read`, **or** **`sra_id`** (run accession such as `SRR28752452`). |
 | Output basename | **`output_file`** (recommended). If missing, some jobs fall back to `sra_id`. |
 
-**GenBank-only requirement:** set **`email`** (or environment variable `ENTREZ_EMAIL`) so NCBI sequences can be fetched for `reference_genbank_accession`.
+**`genome` / `auto`**: the genome sequence is fetched from BV-BRC via `p3-genome-fasta` — no `email` needed.  
+**`genbank`-only requirement:** set **`email`** (or environment variable `ENTREZ_EMAIL`) so NCBI sequences can be fetched for `reference_genbank_accession`.
 
 ### Optional inputs (tuning and segmented references)
 
@@ -97,7 +102,37 @@ The form definition in `app_specs/ViralAssembly.json` matches the table below. O
 
 ### JSON examples
 
-**1) Minimal FASTA + paired-end reads** (only required inputs; production paths are usually workspace objects):
+**1) BV-BRC genome selection + paired-end reads** (`reference_type: genome` — user selects a specific genome):
+
+```json
+{
+  "strategy": "reference_guided",
+  "reference_type": "genome",
+  "reference_genome_id": "11060.9694",
+  "output_file": "viral_ref_guided_fasta_genome",
+  "paired_end_lib": {
+    "read1": "ws:/path/to/R1.fastq",
+    "read2": "ws:/path/to/R2.fastq"
+  }
+}
+```
+
+**2) Auto-select reference via Minhash + paired-end reads** (`reference_type: auto` — UI finds the closest BV-BRC genome automatically):
+
+```json
+{
+  "strategy": "reference_guided",
+  "reference_type": "auto",
+  "reference_genome_id": "11060.9352",
+  "output_file": "viral_ref_guided_fasta_auto",
+  "paired_end_lib": {
+    "read1": "ws:/path/to/R1.fastq",
+    "read2": "ws:/path/to/R2.fastq"
+  }
+}
+```
+
+**3) Minimal FASTA + paired-end reads** (only required inputs; production paths are usually workspace objects):
 
 ```json
 {
@@ -112,7 +147,7 @@ The form definition in `app_specs/ViralAssembly.json` matches the table below. O
 }
 ```
 
-**2) Minimal GenBank + SRA** (`email` required if `ENTREZ_EMAIL` is not set):
+**4) Minimal GenBank + SRA** (`email` required if `ENTREZ_EMAIL` is not set):
 
 ```json
 {
@@ -125,7 +160,7 @@ The form definition in `app_specs/ViralAssembly.json` matches the table below. O
 }
 ```
 
-**3) FASTA + paired-end + optional segmented influenza labels** (`segment_names` and `per_segment_consensus` are **not** required; they only apply to this multi-segment FASTA use case):
+**5) FASTA + paired-end + optional segmented influenza labels** (`segment_names` and `per_segment_consensus` are **not** required; they only apply to this multi-segment FASTA use case):
 
 ```json
 {
@@ -139,7 +174,7 @@ The form definition in `app_specs/ViralAssembly.json` matches the table below. O
 }
 ```
 
-**4) Multiple GenBank accessions + single-end reads** (optional `segment_names` must match the number of reference contigs—here, two accessions → two names):
+**6) Multiple GenBank accessions + single-end reads** (optional `segment_names` must match the number of reference contigs—here, two accessions → two names):
 
 ```json
 {
@@ -173,7 +208,7 @@ Top-level (typical):
 - reference index files (`.amb/.ann/.bwt/.pac/.sa/.fai`)
 - alignment/variant files (`.sam`, `.sorted.bam`, `.bai`, `.vcf.gz`, `.csi`)
 - low-coverage BED (`*.lowcov_dp<cutoff>.bed`)
-- `ref_cache/` with fetched GenBank FASTAs for accession-based jobs
+- `ref_cache/` with fetched reference FASTAs: `bvbrc_<genome_id>.fasta` for `genome`/`auto` jobs, `<accession>.fasta` for `genbank` jobs
 
 SRA note:
 
