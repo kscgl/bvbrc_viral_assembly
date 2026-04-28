@@ -1,0 +1,13 @@
+### Local runs / artifacts (do not commit)
+runs/
+old_results/
+new_results/
+new_results_influenza/
+new_results_nc001474/
+SRR28752452/
+SRR27422853/
+*.zip
+
+### Python caches
+__pycache__/
+scripts/__pycache__/

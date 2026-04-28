@@ -1,0 +1,14 @@
+{
+  "strategy": "reference_guided",
+  "reference_type": "genbank",
+  "reference_genbank_accession": "NC_001474.2",
+  "output_path": "/user@bvbrc/home/output",
+  "output_file": "SRR27422853",
+  "sra_id": "SRR27422853",
+  "paired_end_lib": {
+    "read1": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/new_results_influenza_srr_test/SRR27422853_1.fastq",
+    "read2": "/mnt/c/Users/sdeshmuk/Desktop/bvbrc_viral_assembly/runs/new_results_influenza_srr_test/SRR27422853_2.fastq"
+  },
+  "email": "you@org.org"
+}
+

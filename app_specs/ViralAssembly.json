@@ -45,9 +45,9 @@
     },
     {
       "default": null,
-      "desc": "Sequence Read Archive (SRA) Run ID",
-      "id": "srr_id",
-      "label": "SRR ID",
+      "desc": "SRA run accession (e.g. SRR12345678) used with p3-sra when reads are not uploaded",
+      "id": "sra_id",
+      "label": "SRA run ID",
       "required": 0,
       "type": "string"
     },
@@ -56,7 +56,8 @@
       "desc": "Strategy used for assembly",
       "enum": [
         "auto",
-        "irma"
+        "irma",
+        "reference_guided"
       ],
       "id": "strategy",
       "label": "Assembly strategy",
@@ -75,6 +76,7 @@
         "FLU-minion",
         "FLU-pacbio",
         "FLU-pgm",
+        "FLU-ref",
         "FLU-roche",
         "FLU-secondary",
         "FLU-sensitive",
@@ -91,6 +93,44 @@
     },
     {
       "default": null,
+      "desc": "Reference type for reference-guided assembly",
+      "enum": [
+        "genome",
+        "auto",
+        "genbank",
+        "fasta"
+      ],
+      "id": "reference_type",
+      "label": "Reference type",
+      "required": 0,
+      "type": "enum"
+    },
+    {
+      "default": null,
+      "desc": "BV-BRC genome ID for reference-guided assembly when reference type is genome or auto (e.g. 11060.9352)",
+      "id": "reference_genome_id",
+      "label": "Reference genome ID",
+      "required": 0,
+      "type": "string"
+    },
+    {
+      "default": null,
+      "desc": "GenBank accession(s) for reference-guided assembly when reference type is genbank (use ACC1;ACC2 for multiple)",
+      "id": "reference_genbank_accession",
+      "label": "GenBank reference (accession)",
+      "required": 0,
+      "type": "string"
+    },
+    {
+      "default": null,
+      "desc": "Workspace path to reference FASTA when reference type is fasta (use path1;path2 for multiple files)",
+      "id": "reference_fasta_file",
+      "label": "Reference FASTA file",
+      "required": 0,
+      "type": "string"
+    },
+    {
+      "default": null,
       "desc": "Path to which the output will be written. Defaults to the directory containing the input data. ",
       "id": "output_path",
       "label": "Output Folder",
@@ -104,6 +144,14 @@
       "label": "File Basename",
       "required": 1,
       "type": "wsid"
+    },
+    {
+      "default": null,
+      "desc": "Email for NCBI Entrez (used when fetching GenBank accessions in reference-guided mode)",
+      "id": "email",
+      "label": "Entrez email",
+      "required": 0,
+      "type": "string"
     },
     {
       "default": 0,

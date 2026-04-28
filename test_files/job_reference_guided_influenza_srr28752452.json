@@ -1,0 +1,18 @@
+{
+  "strategy": "reference_guided",
+  "reference_type": "fasta",
+  "reference_fasta_file": "test_files/Influenza_Genome.fasta",
+  "output_file": "SRR28752452",
+  "sra_id": "SRR28752452",
+  "segment_names": [
+    "A_HA",
+    "A_NA",
+    "A_PB1",
+    "A_MP",
+    "A_NP",
+    "A_NS",
+    "A_PA",
+    "A_PB2"
+  ]
+}
+
