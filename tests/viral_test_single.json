@@ -4,6 +4,6 @@
     "output_path": "/mkuscuog@bvbrc/home/assembly",
     "output_file": "test_single",
     "single_end_lib": {
-        "read": "/mkuscuog@bvbrc/home/assembly/.viral_test/SRR30572416_1.fastq"
+        "read": "/olson@patricbrc.org/PATRIC-QA/DataSets/ViralAssembly/SRR30572416_1.fastq"
     }
 }

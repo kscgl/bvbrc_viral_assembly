@@ -4,7 +4,7 @@
     "output_path": "/mkuscuog@bvbrc/home/assembly",
     "output_file": "test_paired",
     "paired_end_lib": {
-        "read1": "/mkuscuog@bvbrc/home/assembly/.test123123/SRR28752451_1.fastq",
-        "read2": "/mkuscuog@bvbrc/home/assembly/.test123123/SRR28752451_2.fastq"
+        "read1": "/olson@patricbrc.org/PATRIC-QA/DataSets/ViralAssembly/SRR28752451_1.fastq",
+        "read2": "/olson@patricbrc.org/PATRIC-QA/DataSets/ViralAssembly/SRR28752451_2.fastq"
     }
 }
