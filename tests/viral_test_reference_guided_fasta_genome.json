@@ -5,8 +5,8 @@
   "output_path": "/mkuscuog@bvbrc/home/assembly/reference_guided",
   "output_file": "viral_ref_guided_fasta_genome",
   "paired_end_lib": {
-    "read1": "/mkuscuog@bvbrc/home/assembly/reference_guided/SRR27422853_1.fastq",
-    "read2": "/mkuscuog@bvbrc/home/assembly/reference_guided/SRR27422853_2.fastq"
+    "read1": "/olson@patricbrc.org/PATRIC-QA/DataSets/ViralAssembly/SRR27422853_1.fastq",
+    "read2": "/olson@patricbrc.org/PATRIC-QA/DataSets/ViralAssembly/SRR27422853_2.fastq"
   }
 }
 
