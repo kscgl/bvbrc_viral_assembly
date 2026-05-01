@@ -52,6 +52,14 @@
       "type": "string"
     },
     {
+      "default": null,
+      "desc": "SRA run accession (e.g. SRR12345678) used with p3-sra when reads are not uploaded",
+      "id": "srr_id",
+      "label": "SRA run ID",
+      "required": 0,
+      "type": "string"
+    },
+    {
       "default": "auto",
       "desc": "Strategy used for assembly",
       "enum": [
