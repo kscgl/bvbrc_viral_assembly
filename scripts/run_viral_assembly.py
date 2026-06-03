@@ -80,6 +80,20 @@ def fetch_file_from_ws(ws_path, local_path):
   return True
 
 
+def irma_read_name(ws_path):
+  """Derive a local filename from a workspace path that IRMA will accept (.fastq or .fastq.gz)."""
+  name = os.path.basename(ws_path)
+  if name.endswith(".fastq.gz") or name.endswith(".fastq"):
+    return name
+  if name.endswith(".fq.gz"):
+    return name[:-6] + ".fastq.gz"
+  if name.endswith(".fq"):
+    return name[:-3] + ".fastq"
+  if name.endswith(".gz"):
+    return name[:-3] + ".fastq.gz"
+  return name + ".fastq"
+
+
 def fetch_fastqs_from_sra(sra_id, temp_dir="/tmp", output_dir="sra_fastqs"):
   """Download FASTQs with ``p3-sra``. Returns (read1_or_single, read2); single-end is (path, None)."""
   os.makedirs(output_dir, exist_ok=True)
@@ -595,8 +609,8 @@ if __name__ == "__main__":
       if not read1 or not read2:
         print("Error: Missing reads for paired-end library.")
         sys.exit(-1)
-      local_read1 = os.path.join(output_dir, "read1.fastq")
-      local_read2 = os.path.join(output_dir, "read2.fastq")
+      local_read1 = os.path.join(output_dir, irma_read_name(read1))
+      local_read2 = os.path.join(output_dir, irma_read_name(read2))
       if not (fetch_file_from_ws(read1, local_read1) and fetch_file_from_ws(read2, local_read2)):
         print("Error: Failed to fetch paired-end reads.")
         sys.exit(-1)
@@ -614,7 +628,7 @@ if __name__ == "__main__":
       if not read:
         print("Error: Missing read for single-end library.")
         sys.exit(-1)
-      local_read = os.path.join(output_dir, "read.fastq")
+      local_read = os.path.join(output_dir, irma_read_name(read))
       if not fetch_file_from_ws(read, local_read):
         print("Error: Failed to fetch single-end read.")
         sys.exit(-1)
